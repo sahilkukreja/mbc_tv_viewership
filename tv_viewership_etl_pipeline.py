@@ -1,8 +1,10 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
-    col, split, when, date_trunc, row_number, count,
+    col, split, when, date_trunc, row_number, count,lag,least,lead,when,to_date,
     concat, lit, to_timestamp, sum as spark_sum
 )
+from pyspark.sql.functions import unix_timestamp
+
 from pyspark.sql.window import Window
 import os
 
@@ -60,11 +62,39 @@ def transform_data(enriched_df):
     return final_df
 
 def calculate_viewership_hours(final_df):
-    # Aggregate total viewership hours by channel and date
-    viewership_hours_df = final_df \
-        .withColumn("date", col("datetime").cast("date")) \
-        .groupBy("channel", "date") \
-        .agg((count("datetime") / 60).alias("total_viewership_hours"))
+    """
+    Calculate total viewership hours by channel and date in PySpark, explicitly handling ELWS transitions.
+    """
+    # Define a window to calculate the previous and next timestamps
+    window_spec = Window.partitionBy("MAC_ID").orderBy("datetime")
+
+    # Add previous and next datetime columns
+    final_df = final_df.withColumn("prev_datetime", lag("datetime").over(window_spec))
+    final_df = final_df.withColumn("next_datetime", lead("datetime").over(window_spec))
+
+    # Calculate viewership duration in minutes
+    final_df = final_df.withColumn(
+        "duration_minutes",
+        when(
+            col("code") == "SSTAND",
+            when(col("prev_datetime").isNotNull(),
+                 (unix_timestamp("datetime") - unix_timestamp("prev_datetime")) / 60
+                ).otherwise(0)
+        ).otherwise(
+            when(col("next_datetime").isNotNull(),
+                 least((unix_timestamp("next_datetime") - unix_timestamp("datetime")) / 60, lit(10))
+                ).otherwise(0)
+        )
+    )
+
+
+    final_df = final_df.withColumn("date", to_date("datetime")).filter(col("channel").isNotNull() & (col("channel") != ""))
+
+    # Aggregate viewership hours by channel and date
+    viewership_hours_df = final_df.groupBy("channel", "date").agg(
+        spark_sum(col("duration_minutes") / 60).alias("total_viewership_hours")
+    ).orderBy("date", col("total_viewership_hours").desc())
+
 
     return viewership_hours_df
 
@@ -81,19 +111,20 @@ def calculate_top_channels(viewership_hours_df):
 def save_data(viewership_hours_df, final_df, data_dir):
     # Define output paths
     viewership_output_path = os.path.join(data_dir, "viewership_hours")
-    combined_output_path = os.path.join(data_dir, "combined_viewership")
+    user_viewship_output_path = os.path.join(data_dir, "user_viewership_data")
 
     # Save viewership hours data
     viewership_hours_df.write.mode("overwrite").option("delimiter", "\t").option("header", "true").csv(viewership_output_path)
 
     # Save combined raw and processed data
-    final_df.write.mode("overwrite").option("delimiter", "\t").option("header", "true").csv(combined_output_path)
+    final_df.write.mode("overwrite").option("delimiter", "\t").option("header", "true").csv(user_viewship_output_path)
 
     print(f"Viewership hours data written to {viewership_output_path}")
-    print(f"Combined raw and processed data written to {combined_output_path}")
 
+    print(f"Combined raw and processed data written to {user_viewship_output_path}")
 
-def calculate_average_viewing_duration(final_df):
+    
+
     # Calculate total viewing duration per user
     user_viewing_duration_df = final_df.groupBy("MAC_ID").agg(count("datetime").alias("total_viewing_minutes"))
     
@@ -103,20 +134,6 @@ def calculate_average_viewing_duration(final_df):
     )
     
     return user_viewing_duration_df, avg_viewing_duration_df
-
-# Calculate total viewing duration per user and the overall average
-user_viewing_duration_df, avg_viewing_duration_df = calculate_average_viewing_duration(final_df)
-
-# Save user-specific viewing duration data to a tab-separated TXT file
-user_viewing_output_path = os.path.join(data_dir, "user_viewing_duration")
-user_viewing_duration_df.write.mode("overwrite").option("delimiter", "\t").option("header", "true").csv(user_viewing_output_path)
-
-# Save average viewing duration data to a text file
-avg_viewing_output_path = os.path.join(data_dir, "average_viewing_duration")
-avg_viewing_duration_df.write.mode("overwrite").option("delimiter", "\t").option("header", "true").csv(avg_viewing_output_path)
-
-print(f"User-specific viewing duration data written to {user_viewing_output_path}")
-print(f"Average viewing duration across all users written to {avg_viewing_output_path}")
 
 
 def main():
