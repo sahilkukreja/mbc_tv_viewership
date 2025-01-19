@@ -2,6 +2,7 @@
 
 This project processes TV viewership event data and enriches it with program details to create a cleaned and transformed dataset suitable for analytics. The pipeline is built using PySpark and designed for scalability and performance.
 
+
 ## Project Structure
 
 - **Python Script**: `tv_viewership_etl_pipeline.py`
@@ -90,3 +91,42 @@ The final dataset includes the following columns:
 ## License
 
 This project is licensed under the MIT License. See the LICENSE file for details.
+
+
+
+temp code 
+
+
+        # Show the processed data
+        processed_data.show(truncate=False)
+
+        # Identify keys matching the pattern
+        matching_keys = [col for col in raw_data.columns if col.startswith(event_key_pattern.rstrip('*'))]
+
+        if not matching_keys:
+            raise KeyError(f"No keys matching the pattern '{event_key_pattern}' found in the JSON file(s).")
+        
+        # Initialize an empty DataFrame for combining results
+        combined_df = None
+
+        for key in matching_keys:
+            # Explode the array under the key and flatten the structure
+            events_df = raw_data.select(explode(raw_data[key]).alias("event")).select("event.*")
+            
+            # Add latitude and longitude columns if `geo_location` exists
+            if "geo_location" in events_df.columns:
+                events_df = events_df.withColumn("latitude", split(col("geo_location"), ",")[0].substr(2, 100)) \
+                                     .withColumn("longitude", split(col("geo_location"), ",")[1].substr(0, 100).substr(1, 100))
+            
+            # Drop `_corrupt_record` column if it exists
+            if "_corrupt_record" in events_df.columns:
+                events_df = events_df.drop("_corrupt_record")
+
+            # Add calculated eventdatetime column
+            events_df = events_df.withColumn("eventdatetime", col("eventdate") + " " + col("eventtime"))
+
+            # Combine DataFrames
+            if combined_df is None:
+                combined_df = events_df
+            else:
+                combined_df = combined_df.union(events_df)
