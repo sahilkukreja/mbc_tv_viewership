@@ -15,7 +15,7 @@ ViewershipDuration AS (
             LAG(datetime) OVER (PARTITION BY MAC_ID ORDER BY datetime) AS prev_datetime,
             LEAD(datetime) OVER (PARTITION BY MAC_ID ORDER BY datetime) AS next_datetime
         FROM 
-            downstream
+            minute_level_viewership
     )
 ),
 UserViewingDuration AS (

@@ -11,7 +11,6 @@ WITH ViewershipDuration AS (
     FROM (
         SELECT 
             *,
-            LAG(datetime) OVER (PARTITION BY MAC_ID ORDER BY datetime) AS prev_datetime,
             LEAD(datetime) OVER (PARTITION BY MAC_ID ORDER BY datetime) AS next_datetime
         FROM 
             minute_level_viewership

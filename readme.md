@@ -4,14 +4,30 @@ This project processes TV viewership event data and enriches it with program det
 
 
 ## Project Structure
+### Run ETL:
+1. Execute `TVViewershipETL.py` to process the raw data using Airflow and run pyspark job in AWS EMR.
 
-- **Python Script**: `tv_viewership_etl_pipeline.py`
-  - Contains the ETL logic for processing JSON files, enriching them with program data, and saving the transformed dataset.
-- **Input Data**:
-  - Event data in JSON format.
-  - Program mapping in a tab-delimited `.txt` file.
-- **Output**:
-  - Processed data stored in Parquet format for efficient querying and analysis.
+### Spark Job:
+1. Use `tv_viewership_spark_job.py` for large-scale processing.
+
+### Execute SQL Queries:
+1. Run scripts in `SQL/` to analyze processed data and generate insights.
+
+## Output
+Processed outputs are available in the `output/` directory, including:
+
+- Aggregated metrics (Average viewing duration, total viewership hours, top 10 channels and reach and TRP analysis).
+- User-level and program-level statistics.
+
+
+## Folder Structure
+- **`SQL/`**: Contains SQL scripts for various transformations and analytical queries.
+- **`data/`**: Holds input data files in JSON and text formats.
+- **`output/`**: Stores processed data outputs, categorized by metric or analysis type.
+- **`TVViewershipETL.py`**: Python script for the ETL process.
+- **`tv_viewership_spark_job.py`**: Spark job implementation for data processing.
+- **`Requirements.txt`**: Lists dependencies and libraries required.
+- **`readme.md`**: Project documentation (this file).
 
 ## Prerequisites
 
@@ -88,45 +104,3 @@ The final dataset includes the following columns:
 - Check environment variable configurations for Spark.
 - Review logs for errors during execution.
 
-## License
-
-This project is licensed under the MIT License. See the LICENSE file for details.
-
-
-
-temp code 
-
-
-        # Show the processed data
-        processed_data.show(truncate=False)
-
-        # Identify keys matching the pattern
-        matching_keys = [col for col in raw_data.columns if col.startswith(event_key_pattern.rstrip('*'))]
-
-        if not matching_keys:
-            raise KeyError(f"No keys matching the pattern '{event_key_pattern}' found in the JSON file(s).")
-        
-        # Initialize an empty DataFrame for combining results
-        combined_df = None
-
-        for key in matching_keys:
-            # Explode the array under the key and flatten the structure
-            events_df = raw_data.select(explode(raw_data[key]).alias("event")).select("event.*")
-            
-            # Add latitude and longitude columns if `geo_location` exists
-            if "geo_location" in events_df.columns:
-                events_df = events_df.withColumn("latitude", split(col("geo_location"), ",")[0].substr(2, 100)) \
-                                     .withColumn("longitude", split(col("geo_location"), ",")[1].substr(0, 100).substr(1, 100))
-            
-            # Drop `_corrupt_record` column if it exists
-            if "_corrupt_record" in events_df.columns:
-                events_df = events_df.drop("_corrupt_record")
-
-            # Add calculated eventdatetime column
-            events_df = events_df.withColumn("eventdatetime", col("eventdate") + " " + col("eventtime"))
-
-            # Combine DataFrames
-            if combined_df is None:
-                combined_df = events_df
-            else:
-                combined_df = combined_df.union(events_df)

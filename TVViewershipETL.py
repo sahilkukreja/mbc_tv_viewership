@@ -1,14 +1,11 @@
-import os
-import logging
 from airflow import DAG
 from airflow.providers.amazon.aws.operators.s3 import S3CopyObjectOperator
 from airflow.providers.amazon.aws.operators.emr import EmrCreateJobFlowOperator, EmrTerminateJobFlowOperator
 from airflow.providers.amazon.aws.sensors.emr import EmrJobFlowSensor
 from airflow.providers.amazon.aws.transfers.s3_to_redshift import S3ToRedshiftOperator
 from datetime import datetime, timedelta
-from airflow.models import Variable
+import os
 
-# Default arguments for the DAG
 default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
@@ -17,13 +14,6 @@ default_args = {
     'retries': 3,
     'retry_delay': timedelta(minutes=5),
 }
-
-# Define variables for S3 bucket and paths
-S3_BUCKET = Variable.get("s3_bucket", default_var="your-default-bucket-name")
-RAW_DATA_PREFIX = Variable.get("raw_data_prefix", default_var="raw_data/")
-PROCESSED_DATA_PREFIX = Variable.get("processed_data_prefix", default_var="processed_data/")
-SCRIPTS_PREFIX = Variable.get("scripts_prefix", default_var="scripts/")
-PROGRAM_MAPPING_FILE = Variable.get("program_mapping_file", default_var="program_data.txt")
 
 # EMR cluster configuration
 JOB_FLOW_OVERRIDES = {
@@ -69,9 +59,9 @@ JOB_FLOW_OVERRIDES = {
 
 # Define the DAG
 with DAG(
-    dag_id="daily_tv_viewership_etl_pipeline",
+    dag_id="tv_viewership_etl_pipeline",
     default_args=default_args,
-    description="A daily ETL pipeline to process TV viewership data using PySpark and load into Redshift",
+    description="An ETL pipeline to process TV viewership data using PySpark and load into Redshift",
     schedule_interval="@daily",
     start_date=datetime(2025, 1, 1),
     catchup=False,
@@ -106,9 +96,10 @@ with DAG(
                     "Args": [
                         "spark-submit",
                         "--deploy-mode", "cluster",
-                        "s3://{{ var.value.s3_bucket }}/{{ var.value.scripts_prefix }}/tv_viewership_etl_pipeline.py",
-                        "--input-path", f"s3://{S3_BUCKET}/{RAW_DATA_PREFIX}",
-                        "--output-path", f"s3://{S3_BUCKET}/{PROCESSED_DATA_PREFIX}"
+                        "--class", "org.apache.spark.examples.SparkPi",
+                        "s3://<your-s3-bucket>/scripts/tv_viewership_etl_pipeline.py",
+                        "--input-path", "s3://<your-s3-bucket>/raw_data/",
+                        "--output-path", "s3://<your-s3-bucket>/processed_data/"
                     ],
                 },
             }
@@ -130,8 +121,8 @@ with DAG(
         task_id="load_into_redshift",
         schema="public",
         table="tv_viewership",
-        s3_bucket=S3_BUCKET,
-        s3_key=PROCESSED_DATA_PREFIX,
+        s3_bucket="<your-s3-bucket>",
+        s3_key="processed_data/minute_level_viewership/",
         copy_options=["FORMAT AS PARQUET"],
         aws_conn_id="aws_default",
         redshift_conn_id="redshift_default",
